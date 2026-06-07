@@ -1,0 +1,5 @@
+groq 
+python-dotenv 
+PyPDF2
+litellm
+pymupdf
