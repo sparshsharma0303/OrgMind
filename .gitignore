@@ -1,0 +1,18 @@
+# environment
+venv/
+.env
+
+# storage (generated files, no need to commit)
+storage/
+logs/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+
+# model cache
+.cache/
+
+# PageIndex
+PageIndex/

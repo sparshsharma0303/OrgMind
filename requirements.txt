@@ -3,3 +3,15 @@ python-dotenv
 PyPDF2
 litellm
 pymupdf
+llama-index
+llama-index-vector-stores-faiss
+llama-index-embeddings-huggingface
+llama-index-llms-groq
+faiss-cpu
+sentence-transformers
+groq
+PyPDF2
+python-dotenv
+pyyaml
+litellm
+pymupdf
