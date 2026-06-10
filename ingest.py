@@ -13,6 +13,7 @@ from llama_index.core import Settings,TreeIndex
 from llama_index.llms.groq import Groq
 from src_logging.logger import logging
 from exception import OrgMindException
+from pathlib import Path
 
 
 
@@ -64,20 +65,28 @@ def build_tree_index(documents: list):
     return index
 
 
-def save_indexes(vector_index, tree_index):
+def save_indexes(vector_index, tree_index,doc_name:str):
     try:
-        vector_index.storage_context.persist(persist_dir="storage/vector")
-        tree_index.storage_context.persist(persist_dir="storage/tree")
+        vector_index.storage_context.persist(persist_dir=f"storage/{doc_name}/vector")
+        tree_index.storage_context.persist(persist_dir=f"storage/{doc_name}/tree")
         logging.info("Indexes saved to disk")
 
     except Exception as e:
         raise OrgMindException(str(e),sys)
 
+def index_document(file_paths: list):
+    for file in file_paths:
+            docs = load_document(file_path= file)
+            vector_index = build_vector_index(docs)
+            tree_index = build_tree_index(docs)
+            doc_name = Path(file).stem.replace(" ", "_")
+            save_indexes(vector_index=vector_index, tree_index=tree_index, doc_name=doc_name)
+            
+        
+
+
 if __name__ == "__main__":
-    docs = load_document("docs/B_Code of Ethics.pdf")
-    vector_index = build_vector_index(docs)
-    tree_index = build_tree_index(docs) 
-    save_indexes(vector_index=vector_index,tree_index = tree_index)
+    index_document(["docs/B_Code of Ethics.pdf","docs/A_Brand Standardization (Brand and IM).pdf","docs/C_Election and Selection Procedure.pdf"])
 
 
 
