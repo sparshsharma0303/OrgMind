@@ -87,7 +87,7 @@ def route_query(query:str):
         raise OrgMindException(str(e),sys)
     
 
-def retrieve_answer(query, indexes:list):
+def retrieve_answer(query, indexes:list,chat_history:list):
     try:
         route = route_query(query)
         answers = []
@@ -113,23 +113,26 @@ def retrieve_answer(query, indexes:list):
                 logging.info(f'successfully generated response using vector index')
 
         client = GroqClient(api_key = groq_api_key)
+        messages = [
+            {
+                "role" : "system",
+                "content": "You are given answers from multiple documents. Consolidate them into one clear, accurate answer. Remove duplicates. If answers conflict, mention both. At the end always add a line: 'Sources: [list the document names used]'"
+            }
+        ]
+        if chat_history :
+            messages.extend(chat_history)
+
+        messages.append({
+                        "role": "user",
+                        "content": f"Query: {query}\n\nAnswers from documents:\n" + "\n\n".join(answers)
+                        })
         fusion_response = client.chat.completions.create(
             model = "llama-3.3-70b-versatile",
-            messages = [
-                {
-                    "role":"system",
-                    "content": "You are given answers from multiple documents. Consolidate them into one clear, accurate answer. Remove duplicates. If answers conflict, mention both."
-                },
-                {
-                    "role": "user",
-                    "content": f"Query: {query}\n\nAnswers from documents:\n" + "\n\n".join(answers)
-                }
-            ], 
+            messages  = messages,
             temperature= 0
         )
+
         fused = fusion_response.choices[0].message.content.strip()
-
-
         return format_answer(query, fused, route)
 
     except Exception as e:
@@ -145,15 +148,24 @@ def format_answer(query, response, route):
     return formatted
 
 
-def ask(query):
+def ask(query,chat_history:list = None):
     try:
+        if not chat_history :
+            chat_history = []
+        
         indexes = load_indexes()
-        answer = retrieve_answer(query=query, indexes=indexes)
-        return answer
+        answer = retrieve_answer(query=query, indexes=indexes,chat_history=chat_history)
+        chat_history.append({"role": "user", "content": query})
+        chat_history.append({"role": "assistant", "content": answer})
+        return answer,chat_history
     except Exception as e:
         raise OrgMindException(str(e), sys)
 
 
 if __name__ == "__main__":
-    print(ask("What is the penalty for ethics violation?"))
-    print(ask("Tell me about AIESEC values"))
+    answer1, history = ask("What is the penalty for ethics violation?")
+    print(answer1)
+    print("---")
+    
+    answer2, history = ask("What happens if it is repeated?", chat_history=history)
+    print(answer2)
