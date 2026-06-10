@@ -16,7 +16,18 @@ from groq import Groq as GroqClient
 # from langchain_classic import chains
 
 groq_api_key = os.getenv('GROQ_API_KEY')
+from concurrent.futures import ThreadPoolExecutor
 
+
+def query_single_doc(args):
+    doc_name, vector_index, tree_index, query, route = args
+    Settings.llm = Groq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
+    if route == "specific":
+        engine = tree_index.as_query_engine()
+    else:
+        engine = vector_index.as_query_engine()
+    response = engine.query(query)
+    return f"[{doc_name}]: {response}"
 
 def load_indexes():
     try:
@@ -76,12 +87,13 @@ def route_query(query:str):
                     "content": query
                 }
             ],
-            temperature= 0
+            temperature= 0,
+            max_tokens=5
             )
+
         route = response.choices[0].message.content.strip().lower()
         logging.info("Query routed as: %s", route)
         return route
-
 
     except Exception as e:
         raise OrgMindException(str(e),sys)
@@ -90,27 +102,12 @@ def route_query(query:str):
 def retrieve_answer(query, indexes:list,chat_history:list):
     try:
         route = route_query(query)
-        answers = []
+        
         logging.info(f'successfully retrived route, route : {route}')
 
-        for doc_name, vector_index, tree_index in indexes:
-
-
-            Settings.llm = Groq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
-            # Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-
-            if (route == "specific"):
-                query_engine = tree_index.as_query_engine()
-                response = query_engine.query(query)
-                answers.append(f"[{doc_name}]: {response}")
-                logging.info(f'successfully generated response using tree index')
-
-
-            else:
-                query_engine = vector_index.as_query_engine()
-                response = query_engine.query(query)
-                answers.append(f"[{doc_name}]: {response}")
-                logging.info(f'successfully generated response using vector index')
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            args = [(doc_name, vi, ti, query, route) for doc_name, vi, ti in indexes]
+            answers = list(executor.map(query_single_doc, args))
 
         client = GroqClient(api_key = groq_api_key)
         messages = [
@@ -126,14 +123,19 @@ def retrieve_answer(query, indexes:list,chat_history:list):
                         "role": "user",
                         "content": f"Query: {query}\n\nAnswers from documents:\n" + "\n\n".join(answers)
                         })
+        
         fusion_response = client.chat.completions.create(
             model = "llama-3.3-70b-versatile",
             messages  = messages,
-            temperature= 0
+            temperature= 0,
+            stream=True 
         )
-
-        fused = fusion_response.choices[0].message.content.strip()
-        return format_answer(query, fused, route)
+        def stream_generator():
+            for chunk in fusion_response:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+        return stream_generator(), route
 
     except Exception as e:
         raise OrgMindException(str(e),sys)
@@ -148,16 +150,14 @@ def format_answer(query, response, route):
     return formatted
 
 
-def ask(query,chat_history:list = None):
+def ask(query, chat_history=None, indexes=None):
     try:
-        if not chat_history :
+        if not chat_history:
             chat_history = []
-        
-        indexes = load_indexes()
-        answer = retrieve_answer(query=query, indexes=indexes,chat_history=chat_history)
-        chat_history.append({"role": "user", "content": query})
-        chat_history.append({"role": "assistant", "content": answer})
-        return answer,chat_history
+        if indexes is None:
+            indexes = load_indexes()
+        stream, route = retrieve_answer(query=query, indexes=indexes, chat_history=chat_history)
+        return stream, route, chat_history
     except Exception as e:
         raise OrgMindException(str(e), sys)
 
